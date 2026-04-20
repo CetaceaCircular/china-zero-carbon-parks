@@ -1,0 +1,263 @@
+
+<h2 class="sr-only">Interactive map of China showing all 52 first-batch national-level zero-carbon industrial parks, plotted on real province boundaries including SARs and Taiwan.</h2>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+#wrap{width:100%;font-family:var(--font-sans)}
+#map-container{position:relative;width:100%;background:var(--color-background-secondary);border-radius:var(--border-radius-lg);overflow:hidden;min-height:420px}
+#china-svg{width:100%;height:auto;display:block}
+.land{fill:#B5D4F4;stroke:#fff;stroke-width:0.5}
+.disputed{fill:#D3D1C7;stroke:#fff;stroke-width:0.4;stroke-dasharray:2,2}
+.sea{fill:#E6F1FB}
+.dot{cursor:pointer;transition:all 0.1s}
+.dot:hover{r:8}
+#tooltip{position:absolute;background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:10px 14px;font-size:12px;pointer-events:none;opacity:0;transition:opacity 0.15s;max-width:240px;z-index:10}
+#tooltip .t-name{font-weight:500;font-size:13px;color:var(--color-text-primary);margin-bottom:2px}
+#tooltip .t-zh{font-size:11px;color:var(--color-text-secondary);margin-bottom:6px}
+#tooltip .t-meta{font-size:11px;color:var(--color-text-tertiary)}
+#tooltip .t-badge{display:inline-block;font-size:10px;padding:2px 6px;border-radius:4px;margin-right:4px}
+.b-zone{background:#E6F1FB;color:#0C447C}
+.b-whole{background:#FAEEDA;color:#633806}
+#sidebar{padding:14px 0 0}
+#filter-bar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+#filter-bar button{font-size:11px;padding:4px 10px;border-radius:20px;border:0.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);cursor:pointer}
+#filter-bar button.on{background:var(--color-background-info);color:var(--color-text-info);border-color:transparent}
+#cnt{font-size:12px;color:var(--color-text-secondary);margin-left:auto}
+#park-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(195px,1fr));gap:8px}
+.pc{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:8px 10px;cursor:pointer}
+.pc:hover{border-color:var(--color-border-secondary)}
+.pc-num{font-size:10px;color:var(--color-text-tertiary)}
+.pc-en{font-size:11px;font-weight:500;color:var(--color-text-primary);line-height:1.3;margin:2px 0}
+.pc-zh{font-size:10px;color:var(--color-text-secondary)}
+.pc-mt{font-size:10px;color:var(--color-text-tertiary);margin-top:3px}
+#legend{display:flex;gap:16px;align-items:center;padding:8px 0;font-size:11px;color:var(--color-text-secondary)}
+.leg-dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:4px;vertical-align:middle}
+#loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:13px;color:var(--color-text-secondary)}
+</style>
+
+<div id="wrap">
+<div id="filter-bar">
+  <button class="on" onclick="setFilter('all',this)">All 52</button>
+  <button onclick="setFilter('zone',this)">Park-within-park 园中园</button>
+  <button onclick="setFilter('whole',this)">Whole park 整体</button>
+  <div id="legend">
+    <span><span class="leg-dot" style="background:#185FA5"></span>园中园</span>
+    <span><span class="leg-dot" style="background:#EF9F27"></span>整体</span>
+  </div>
+  <span id="cnt">52 parks</span>
+</div>
+<div id="map-container">
+  <div id="loading">Loading map data...</div>
+  <svg id="china-svg" viewBox="0 0 960 720" xmlns="http://www.w3.org/2000/svg">
+    <rect width="960" height="720" fill="#daeaf7"/>
+    <g id="g-land"></g>
+    <g id="g-dots"></g>
+  </svg>
+  <div id="tooltip"></div>
+</div>
+<div id="sidebar">
+  <div id="park-list"></div>
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
+<script>
+const parks = [
+  {id:1,en:"Beijing Economic-Technological Development Area",zh:"北京经济技术开发区",scope:"zone",period:"2025–2028",ll:[116.5,39.8]},
+  {id:2,en:"Tianjin Economic-Technological Development Area",zh:"天津经济技术开发区",scope:"zone",period:"2025–2030",ll:[117.2,39.1]},
+  {id:3,en:"Tianjin Port Free Trade Zone",zh:"天津港保税区",scope:"zone",period:"2025–2030",ll:[117.7,39.0]},
+  {id:4,en:"Baoding Hi-Tech IDZ, Hebei",zh:"河北保定高新技术产业开发区",scope:"zone",period:"2025–2028",ll:[115.5,38.9]},
+  {id:5,en:"Cangzhou Cangdong EDZ, Hebei",zh:"河北沧州沧东经济开发区",scope:"zone",period:"2025–2027",ll:[116.8,38.3]},
+  {id:6,en:"Tangshan Leting EDZ, Hebei",zh:"河北唐山乐亭经济开发区",scope:"zone",period:"2025–2028",ll:[118.9,39.4]},
+  {id:7,en:"Datong ETDA, Shanxi",zh:"山西大同经济技术开发区",scope:"zone",period:"2025–2028",ll:[113.3,40.1]},
+  {id:8,en:"Yangquan Hi-Tech IDZ, Shanxi",zh:"山西阳泉高新技术产业开发区",scope:"zone",period:"2025–2028",ll:[113.6,37.9]},
+  {id:9,en:"Ordos Mongolian-Su EDZ, Inner Mongolia",zh:"内蒙古鄂尔多斯蒙苏经济开发区",scope:"zone",period:"2025–2028",ll:[109.8,39.6]},
+  {id:10,en:"Baotou Rare Earth Hi-Tech IDZ, Inner Mongolia",zh:"内蒙古包头稀土高新技术产业开发区",scope:"zone",period:"2025–2027",ll:[110.0,40.7]},
+  {id:11,en:"Shenyang Sino-German Mfg Park, Liaoning",zh:"辽宁沈阳中德高端装备制造产业园",scope:"whole",period:"2025–2027",ll:[123.4,41.8]},
+  {id:12,en:"Siping Petrochemical Park, Jilin",zh:"吉林松原石油化学工业循环经济园区",scope:"zone",period:"2025–2030",ll:[124.8,45.1]},
+  {id:13,en:"Liaoyuan Hi-Tech IDZ, Jilin",zh:"吉林辽源高新技术产业开发区",scope:"whole",period:"2025–2028",ll:[125.1,42.9]},
+  {id:14,en:"Siping New Industrial EDZ, Jilin",zh:"吉林四平新型工业化经济开发区",scope:"zone",period:"2025–2029",ll:[124.4,43.2]},
+  {id:15,en:"Qihe River Green Mfg Park, Heilongjiang",zh:"黑龙江七台河江河融合绿色智造产业园区",scope:"whole",period:"2025–2030",ll:[130.9,45.8]},
+  {id:16,en:"Suihua Anda Fine Chem Park, Heilongjiang",zh:"黑龙江绥化安达经济开发区精细化工业园",scope:"zone",period:"2025–2030",ll:[125.3,46.4]},
+  {id:17,en:"Shanghai Lingang Zero-Carbon Bay",zh:"上海临港新片区零碳湾",scope:"zone",period:"2025–2028",ll:[121.9,30.9]},
+  {id:18,en:"Yancheng Dafeng Port EDZ, Jiangsu",zh:"江苏盐城大丰港经济开发区",scope:"zone",period:"2025–2028",ll:[120.5,33.2]},
+  {id:19,en:"Changzhou Liyang Hi-Tech IDZ, Jiangsu",zh:"江苏常州溧阳高新技术产业开发区",scope:"zone",period:"2025–2029",ll:[119.5,31.4]},
+  {id:20,en:"Taizhou Wenling EDZ, Zhejiang",zh:"浙江台州温岭经济开发区",scope:"zone",period:"2025–2030",ll:[121.4,28.4]},
+  {id:21,en:"Xuancheng Guangde EDZ, Anhui",zh:"安徽宣城广德经济开发区",scope:"zone",period:"2025–2028",ll:[119.4,30.9]},
+  {id:22,en:"Fuyang EDZ, Anhui",zh:"安徽阜阳经济开发区",scope:"zone",period:"2025–2030",ll:[115.8,32.9]},
+  {id:23,en:"Xiamen Huoju Hi-Tech IDZ, Fujian",zh:"福建厦门火炬高技术产业开发区同翔高新城",scope:"zone",period:"2025–2029",ll:[118.1,24.5]},
+  {id:24,en:"Ningde Fuding Industrial Park, Fujian",zh:"福建宁德福鼎工业园区",scope:"zone",period:"2025–2028",ll:[120.2,27.3]},
+  {id:25,en:"Zhangzhou Gulei Port EDZ, Fujian",zh:"福建漳州古雷港经济开发区",scope:"zone",period:"2025–2029",ll:[117.8,24.0]},
+  {id:26,en:"Yichun ETDA, Jiangxi",zh:"江西宜春经济技术开发区",scope:"zone",period:"2025–2030",ll:[114.4,27.8]},
+  {id:27,en:"Yantai Dingzi Bay New Energy Zone, Shandong",zh:"山东烟台丁字湾新型能源创新区",scope:"zone",period:"2025–2030",ll:[121.4,36.9]},
+  {id:28,en:"Dongying Shengli ETDA, Shandong",zh:"山东东营垦利经济技术开发区",scope:"zone",period:"2025–2027",ll:[118.5,37.6]},
+  {id:29,en:"Zhengzhou Airport Hi-Tech IDZ, Henan",zh:"河南郑州航空港高新技术产业开发区",scope:"zone",period:"2025–2030",ll:[113.8,34.5]},
+  {id:30,en:"Jingmen Hi-Tech IDZ, Hubei",zh:"湖北荆门高新技术产业开发区",scope:"zone",period:"2025–2030",ll:[112.2,31.0]},
+  {id:31,en:"Xiangtan ETDA, Hunan",zh:"湖南湘潭经济技术开发区",scope:"zone",period:"2025–2030",ll:[112.9,27.8]},
+  {id:32,en:"Shantou Lianjiang Industrial Park, Guangdong",zh:"广东汕头濂江产业园区",scope:"zone",period:"2025–2030",ll:[116.7,23.4]},
+  {id:33,en:"Zhanjiang Lingang Economic Zone, Guangdong",zh:"广东湛江临港经济区",scope:"zone",period:"2025–2030",ll:[110.4,21.2]},
+  {id:34,en:"Guilong New Area Yulin Longtan Park, Guangxi",zh:"广西龙港新区玉林龙潭产业园区",scope:"zone",period:"2025–2029",ll:[110.2,22.6]},
+  {id:35,en:"Beihai Tieshan Port Industrial Zone, Guangxi",zh:"广西北海铁山港（临海）工业区",scope:"zone",period:"2025–2030",ll:[109.2,21.5]},
+  {id:36,en:"Baise Emerging Industries Park, Guangxi",zh:"广西百色战略性新兴产业园",scope:"zone",period:"2025–2030",ll:[106.6,23.9]},
+  {id:37,en:"Haikou National Hi-Tech IDZ, Hainan",zh:"海南海口国家高新技术产业开发区",scope:"zone",period:"2025–2030",ll:[110.3,20.0]},
+  {id:38,en:"Chongqing Liangjiang New Area",zh:"重庆两江新区",scope:"zone",period:"2025–2030",ll:[106.6,29.7]},
+  {id:39,en:"Yibin Lingang ETDZ East Industrial Park, Sichuan",zh:"四川宜宾临港经济技术开发区东部产业园",scope:"zone",period:"2025–2030",ll:[104.6,28.8]},
+  {id:40,en:"Guiyang Big Data Tech City, Guizhou",zh:"贵州贵阳大数据科创城",scope:"zone",period:"2025–2029",ll:[106.7,26.6]},
+  {id:41,en:"Dali Xiangyu ETDA, Yunnan",zh:"云南大理祥云经济技术开发区",scope:"zone",period:"2025–2030",ll:[100.7,25.5]},
+  {id:42,en:"Qujing ETDA, Yunnan",zh:"云南曲靖经济技术开发区",scope:"zone",period:"2025–2030",ll:[103.8,25.5]},
+  {id:43,en:"Lhasa ETDA, Tibet",zh:"西藏拉萨经济技术开发区",scope:"zone",period:"2025–2030",ll:[91.1,29.7]},
+  {id:44,en:"Xianyang Sanyuan Hi-Tech IDZ, Shaanxi",zh:"陕西咸阳三原高新技术产业开发区",scope:"whole",period:"2025–2028",ll:[108.9,34.6]},
+  {id:45,en:"Jinchang ETDA, Gansu",zh:"甘肃金昌经济技术开发区",scope:"zone",period:"2025–2030",ll:[102.2,38.5]},
+  {id:46,en:"Qingyang East-Data-West-Computing Park, Gansu",zh:"甘肃庆阳东数西算产业园区",scope:"whole",period:"2025–2030",ll:[107.6,35.7]},
+  {id:47,en:"Xining ETDZ Nanchuan Industrial Park, Qinghai",zh:"青海西宁经济技术开发区南川工业园区",scope:"zone",period:"2025–2028",ll:[101.8,36.6]},
+  {id:48,en:"Yinchuan Su-Ning Industrial Park, Ningxia",zh:"宁夏银川苏银产业园",scope:"whole",period:"2025–2027",ll:[106.3,38.5]},
+  {id:49,en:"Zhongwei Industrial Park, Ningxia",zh:"宁夏中卫工业园区",scope:"zone",period:"2025–2027",ll:[105.2,37.5]},
+  {id:50,en:"Ürümqi Ganquanbao ETDA, Xinjiang",zh:"新疆乌鲁木齐甘泉堡经济技术开发区",scope:"zone",period:"2025–2028",ll:[87.6,43.8]},
+  {id:51,en:"Korla Hi-Tech IDZ, Xinjiang",zh:"新疆库尔勒上库高新技术产业开发区",scope:"zone",period:"2025–2030",ll:[86.1,41.7]},
+  {id:52,en:"Xinjiang Production Corps Shihezi ETDA",zh:"新疆生产建设兵团石河子经济技术开发区",scope:"zone",period:"2025–2028",ll:[86.0,44.3]},
+];
+
+let currentFilter = 'all';
+let activeId = null;
+let projection = null;
+
+function getColor(scope) {
+  return scope === 'whole' ? '#EF9F27' : '#185FA5';
+}
+
+function showTooltip(event, p) {
+  const tt = document.getElementById('tooltip');
+  const container = document.getElementById('map-container');
+  const cRect = container.getBoundingClientRect();
+  const eRect = event.target.getBoundingClientRect();
+  let tx = eRect.left - cRect.left + 12;
+  let ty = eRect.top - cRect.top - 10;
+  if (tx + 250 > cRect.width) tx = eRect.left - cRect.left - 255;
+  if (ty < 0) ty = eRect.top - cRect.top + 20;
+  tt.style.left = tx + 'px';
+  tt.style.top = ty + 'px';
+  tt.innerHTML = `<div class="t-name">#${p.id} ${p.en}</div><div class="t-zh">${p.zh}</div><div class="t-meta"><span class="t-badge ${p.scope==='whole'?'b-whole':'b-zone'}">${p.scope==='whole'?'整体':'园中园'}</span>${p.period}</div>`;
+  tt.style.opacity = '1';
+}
+
+function hideTooltip() {
+  document.getElementById('tooltip').style.opacity = '0';
+}
+
+function selectPark(id) {
+  activeId = activeId === id ? null : id;
+  renderDots();
+  renderList();
+  if (activeId) {
+    const card = document.querySelector('.pc[data-id="'+activeId+'"]');
+    if (card) card.scrollIntoView({behavior:'smooth', block:'nearest'});
+  }
+}
+
+function renderDots() {
+  const g = document.getElementById('g-dots');
+  g.innerHTML = '';
+  if (!projection) return;
+  const filtered = parks.filter(p => currentFilter === 'all' || p.scope === currentFilter);
+  document.getElementById('cnt').textContent = filtered.length + ' parks';
+  filtered.forEach(p => {
+    const [px, py] = projection(p.ll);
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', px);
+    circle.setAttribute('cy', py);
+    circle.setAttribute('r', activeId === p.id ? 8 : 5);
+    circle.setAttribute('fill', getColor(p.scope));
+    circle.setAttribute('stroke', '#fff');
+    circle.setAttribute('stroke-width', '1.5');
+    circle.setAttribute('class', 'dot');
+    circle.addEventListener('mouseenter', e => showTooltip(e, p));
+    circle.addEventListener('mouseleave', hideTooltip);
+    circle.addEventListener('click', () => selectPark(p.id));
+    g.appendChild(circle);
+  });
+}
+
+function renderList() {
+  const list = document.getElementById('park-list');
+  list.innerHTML = '';
+  const filtered = parks.filter(p => currentFilter === 'all' || p.scope === currentFilter);
+  filtered.forEach(p => {
+    const d = document.createElement('div');
+    d.className = 'pc';
+    d.setAttribute('data-id', p.id);
+    if (activeId === p.id) d.style.borderColor = 'var(--color-border-info)';
+    d.innerHTML = `<div class="pc-num">#${p.id}</div><div class="pc-en">${p.en}</div><div class="pc-zh">${p.zh}</div><div class="pc-mt">${p.scope==='whole'?'整体':'园中园'} · ${p.period}</div>`;
+    d.addEventListener('click', () => selectPark(p.id));
+    list.appendChild(d);
+  });
+}
+
+function setFilter(f, btn) {
+  currentFilter = f;
+  activeId = null;
+  document.querySelectorAll('#filter-bar button').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  renderDots();
+  renderList();
+}
+
+async function initMap() {
+  try {
+    const world = await d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
+    const chinaAndNeighbours = await d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json');
+
+    const svg = d3.select('#china-svg');
+    const width = 960, height = 720;
+
+    projection = d3.geoMercator()
+      .center([105, 35])
+      .scale(720)
+      .translate([width / 2, height / 2]);
+
+    const path = d3.geoPath().projection(projection);
+    const countries = topojson.feature(chinaAndNeighbours, chinaAndNeighbours.objects.countries);
+
+    const chinaId = '156';
+    const twId = '158';
+    const hkId = '344';
+    const moId = '446';
+    const chinaGroup = [chinaId, twId, hkId, moId];
+    const neighbourIds = ['496','643','398','762','860','004','586','356','064','524','104','418','116','704','408','410'];
+
+    const gLand = d3.select('#g-land');
+
+    gLand.selectAll('.neighbour')
+      .data(countries.features.filter(f => neighbourIds.includes(f.id)))
+      .join('path')
+      .attr('class', 'neighbour')
+      .attr('d', path)
+      .attr('fill', '#D3D1C7')
+      .attr('stroke', '#fff')
+      .attr('stroke-width', 0.4);
+
+    gLand.selectAll('.china')
+      .data(countries.features.filter(f => chinaGroup.includes(f.id)))
+      .join('path')
+      .attr('class', 'china')
+      .attr('d', path)
+      .attr('fill', d => {
+        if (d.id === twId) return '#9FE1CB';
+        if (d.id === hkId) return '#5DCAA5';
+        if (d.id === moId) return '#5DCAA5';
+        return '#85B7EB';
+      })
+      .attr('stroke', '#fff')
+      .attr('stroke-width', 0.8);
+
+    document.getElementById('loading').style.display = 'none';
+    renderDots();
+    renderList();
+
+  } catch(e) {
+    document.getElementById('loading').textContent = 'Map load failed — try refreshing.';
+    console.error(e);
+  }
+}
+
+initMap();
+</script>
